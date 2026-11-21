@@ -8,7 +8,7 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 def list_models() -> list[str]:
-    if "groq.com" in config.OLLAMA_URL:
+    if os.getenv("OLLAMA_API_KEY"):
         return ["llama-3.1-8b-instant"]
     try:
         r = httpx.get(f"{config.OLLAMA_URL}/api/tags", headers=_headers(), timeout=15)
@@ -18,7 +18,7 @@ def list_models() -> list[str]:
         raise HTTPException(503, "Ollama is not reachable. Start it with 'ollama serve'.")
 
 def chat(model: str | None, messages: list[dict]) -> str:
-    if "groq.com" in config.OLLAMA_URL:
+    if os.getenv("OLLAMA_API_KEY"):
         try:
             r = httpx.post(
                 "https://groq.com",
@@ -30,8 +30,10 @@ def chat(model: str | None, messages: list[dict]) -> str:
                 },
             )
             r.raise_for_status()
-            return r.json()["choices"]["message"]["content"]
-        except httpx.HTTPError as e:
+            data = r.json()
+            first_choice = data["choices"].pop(0)
+            return first_choice["message"]["content"]
+        except Exception as e:
             raise HTTPException(502, f"AI request failed: {e}")
 
     installed = list_models()
@@ -40,7 +42,7 @@ def chat(model: str | None, messages: list[dict]) -> str:
     if not model:
         model = next((m for m in installed if m.startswith(config.DEFAULT_MODEL)), installed)
     if model not in installed:
-        model = installed
+        model = installed.pop(0)
     try:
         r = httpx.post(
             f"{config.OLLAMA_URL}/api/chat",
