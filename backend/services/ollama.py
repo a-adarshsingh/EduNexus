@@ -1,10 +1,15 @@
+import os
 import httpx
 from fastapi import HTTPException
 from ..core import config
 
+def _headers() -> dict:
+    api_key = os.getenv("OLLAMA_API_KEY", "").strip()
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
 def list_models() -> list[str]:
     try:
-        r = httpx.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
+        r = httpx.get(f"{config.OLLAMA_URL}/api/tags", headers=_headers(), timeout=15)
         r.raise_for_status()
         return [m["name"] for m in r.json().get("models", [])]
     except httpx.HTTPError:
@@ -17,11 +22,19 @@ def chat(model: str | None, messages: list[dict]) -> str:
     if not model:
         model = next((m for m in installed if m.startswith(config.DEFAULT_MODEL)), installed[0])
     if model not in installed:
-        raise HTTPException(404, f"Model '{model}' is not installed.")
+        model = installed[0]
     try:
-        r = httpx.post(f"{config.OLLAMA_URL}/api/chat", timeout=180,
-                       json={"model": model, "messages": messages, "stream": False,
-                             "options": {"num_ctx": 4096}})
+        r = httpx.post(
+            f"{config.OLLAMA_URL}/api/chat",
+            headers=_headers(),
+            timeout=180,
+            json={
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"num_ctx": 4096},
+            },
+        )
         r.raise_for_status()
         return r.json()["message"]["content"]
     except httpx.HTTPError as e:
