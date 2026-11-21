@@ -8,6 +8,8 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 def list_models() -> list[str]:
+    if "groq.com" in config.OLLAMA_URL:
+        return ["llama-3.1-8b-instant"]
     try:
         r = httpx.get(f"{config.OLLAMA_URL}/api/tags", headers=_headers(), timeout=15)
         r.raise_for_status()
@@ -16,13 +18,29 @@ def list_models() -> list[str]:
         raise HTTPException(503, "Ollama is not reachable. Start it with 'ollama serve'.")
 
 def chat(model: str | None, messages: list[dict]) -> str:
+    if "groq.com" in config.OLLAMA_URL:
+        try:
+            r = httpx.post(
+                "https://groq.com",
+                headers=_headers(),
+                timeout=60,
+                json={
+                    "model": "llama-3.1-8b-instant",
+                    "messages": messages,
+                },
+            )
+            r.raise_for_status()
+            return r.json()["choices"]["message"]["content"]
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"AI request failed: {e}")
+
     installed = list_models()
     if not installed:
         raise HTTPException(503, "No Ollama models installed. Run: ollama pull llama3.2")
     if not model:
-        model = next((m for m in installed if m.startswith(config.DEFAULT_MODEL)), installed[0])
+        model = next((m for m in installed if m.startswith(config.DEFAULT_MODEL)), installed)
     if model not in installed:
-        model = installed[0]
+        model = installed
     try:
         r = httpx.post(
             f"{config.OLLAMA_URL}/api/chat",
@@ -42,3 +60,4 @@ def chat(model: str | None, messages: list[dict]) -> str:
 
 TUTOR = ("You are EduNexus, a patient AI tutor. Teach, don't just answer: explain step by step, "
          "give a simple example or analogy, and end with a short check-for-understanding question when useful.")
+
